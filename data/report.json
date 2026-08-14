@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-08-14T13:32:50.916Z",
+  "pages_read": 40,
+  "raw_cards": 1200,
+  "unique_cards": 1200,
+  "duplicates_removed": 0,
+  "without_large_player_image": 65,
+  "without_large_card_image": 0,
+  "without_any_player_image": 65,
+  "without_any_card_image": 0,
+  "cards_with_zero_prices": 220,
+  "final_file": "C:\\Users\\Daniel\\documents\\busca-cartas-api\\data\\cards.json"
+}

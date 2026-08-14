@@ -1,0 +1,67 @@
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { swaggerUI } from '@hono/swagger-ui';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { env } from './config/env.js';
+import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { validationError } from './errors.js';
+import { healthRoutes } from './modules/health/health.routes.js';
+
+/**
+ * Monta a aplicação. Não escuta porta — quem escuta é `src/server.ts`
+ * (local) ou `api/index.ts` (Vercel). Isso mantém os testes sem rede:
+ * o Vitest importa `app` e chama `app.request(...)` direto.
+ */
+export function createApp(): OpenAPIHono {
+  const app = new OpenAPIHono({
+    // Erros de validação entram no mesmo formato das demais falhas (§15).
+    defaultHook: (result, _c) => {
+      if (!result.success) {
+        throw validationError(
+          'Parâmetros inválidos',
+          result.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        );
+      }
+    },
+  });
+
+  app.onError(errorHandler);
+  app.notFound(notFoundHandler);
+
+  if (env.NODE_ENV !== 'test') app.use('*', logger());
+
+  app.use(
+    '*',
+    cors({
+      origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(','),
+      allowMethods: ['GET', 'OPTIONS'],
+      maxAge: 86_400,
+    }),
+  );
+
+  const base = `/api/${env.API_VERSION}`;
+
+  app.route(base, healthRoutes);
+
+  app.doc(`${base}/openapi.json`, {
+    openapi: '3.0.0',
+    info: {
+      title: 'Football Cards API',
+      version: '0.1.0',
+      description:
+        'Catálogo de cartas de futebol. Serviço genérico de consulta, independente das regras de qualquer jogo.',
+    },
+    servers: [{ url: '/', description: 'Servidor atual' }],
+  });
+
+  app.get('/docs', swaggerUI({ url: `${base}/openapi.json` }));
+
+  app.get('/', (c) => c.redirect('/docs'));
+
+  return app;
+}
+
+export const app = createApp();
