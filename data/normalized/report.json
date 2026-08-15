@@ -1,0 +1,49 @@
+{
+  "generated_at": "2026-08-15T16:22:55.783Z",
+  "input": "data\\cards.json",
+  "raw_cards": 1200,
+  "normalized": 1200,
+  "failed": 0,
+  "warnings": 0,
+  "complete": 935,
+  "tradeable": 980,
+  "without_player_image": 65,
+  "without_price": 220,
+  "goalkeepers": 53,
+  "with_truncated_alt_positions": 238,
+  "without_alt_positions": 266,
+  "seasons": {
+    "26": 1200
+  },
+  "positions": {
+    "ST": 248,
+    "CB": 163,
+    "CM": 151,
+    "CAM": 138,
+    "CDM": 83,
+    "RB": 70,
+    "LW": 64,
+    "LB": 64,
+    "RW": 60,
+    "RM": 56,
+    "GK": 53,
+    "LM": 50
+  },
+  "ratings": {
+    "92": 54,
+    "93": 221,
+    "94": 190,
+    "95": 238,
+    "96": 266,
+    "97": 147,
+    "98": 41,
+    "99": 43
+  },
+  "reference_price": {
+    "min": 9275,
+    "median": 66625,
+    "max": 5625000
+  },
+  "failures": [],
+  "warning_samples": []
+}

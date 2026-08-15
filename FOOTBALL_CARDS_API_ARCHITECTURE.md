@@ -148,6 +148,18 @@ Regras:
 
 **3. Região.** A região do projeto Supabase é escolhida na criação e não pode ser trocada depois sem migração. Banco e função em continentes diferentes custam 150 ms+ por ida e volta. Alinhar as duas regiões desde o início.
 
+### Proteção de deployment **[verificado em produção]**
+
+Por padrão a Vercel protege as URLs de branch e preview com autenticação: elas devolvem 302 para o SSO. Apenas o alias de produção é público.
+
+```text
+foot-deck.vercel.app                  público
+foot-deck-git-<branch>-<org>...       exige login Vercel
+foot-deck-<hash>-<org>...             exige login Vercel
+```
+
+Manter previews protegidos é desejável. A consequência a não esquecer: qualquer consumidor externo — o jogo, o avaliador do trabalho, o cron de keep-alive — precisa apontar para o domínio de produção. Um cron apontado para preview falha silenciosamente todos os dias e o banco pausa mesmo assim.
+
 ### Repositórios e CORS
 
 Dois projetos Vercel independentes:

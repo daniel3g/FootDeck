@@ -12,6 +12,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build": "tsc --noEmit",
+    "normalize": "tsx scripts/normalize-cards.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

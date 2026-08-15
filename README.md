@@ -2,6 +2,16 @@
 
 API REST de catálogo de cartas de futebol. Serviço genérico de consulta, independente das regras de qualquer jogo.
 
+**No ar:** https://foot-deck.vercel.app/docs
+
+| Recurso | URL |
+| --- | --- |
+| Swagger UI | https://foot-deck.vercel.app/docs |
+| Health | https://foot-deck.vercel.app/api/v1/health |
+| OpenAPI | https://foot-deck.vercel.app/api/v1/openapi.json |
+
+Use sempre o domínio de produção acima. As URLs de branch e preview (`foot-deck-git-main-…`, `foot-deck-<hash>-…`) ficam atrás da autenticação da Vercel e devolvem 302.
+
 Documentação de arquitetura e decisões: [`FOOTBALL_CARDS_API_ARCHITECTURE.md`](./FOOTBALL_CARDS_API_ARCHITECTURE.md).
 
 **Estado atual: Fase 1 (fundação).** Servidor, validação de ambiente, OpenAPI, tratamento de erros e testes. Ainda sem banco de dados.
@@ -54,7 +64,13 @@ A Vercel define `NODE_ENV=production` sozinha — não configure essa variável 
 
 **`CORS_ORIGIN` é obrigatória em produção.** Sem ela a API falha no boot, de propósito: a Vercel já roda em modo produção, então a origem ficaria aberta por default em vez de por decisão. `*` é uma escolha legítima para um catálogo público sem credenciais; troque pela origem do jogo se quiser restringir.
 
-Depois do primeiro deploy, cadastre o secret `API_HEALTH_URL` no GitHub apontando para `https://<projeto>.vercel.app/api/v1/health`. O workflow `keep-alive` usa isso para impedir que o projeto Supabase pause por inatividade.
+Cadastre o secret `API_HEALTH_URL` no GitHub com **exatamente** esta URL:
+
+```
+https://foot-deck.vercel.app/api/v1/health
+```
+
+O workflow `keep-alive` usa isso para impedir que o projeto Supabase pause por inatividade. Precisa ser o domínio de produção — uma URL de preview devolve 302 e o cron falha todo dia.
 
 ---
 
