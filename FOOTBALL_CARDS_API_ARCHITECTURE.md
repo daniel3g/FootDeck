@@ -118,11 +118,39 @@ Ver §5 para as decisões operacionais — que é onde esse arranjo costuma falh
 
 ## 5. Hospedagem e operação
 
-Alvo: **Vercel (Hobby) + Supabase (Free)**, sem custo, para um projeto acadêmico.
+Alvo: **Vercel (Hobby)**, sem custo, para um projeto acadêmico. **Sem banco de dados.**
 
 ### Por que este arranjo
 
-Render foi descartado: o tier gratuito hiberna após ~15 minutos sem tráfego e leva perto de um minuto para responder de novo. Para um projeto avaliado esporadicamente, é o pior perfil possível — o avaliador abre o link e encara uma tela branca. Railway e Fly.io não têm mais tier gratuito real. Cloudflare Workers é tecnicamente superior, mas exigiria resolver o acesso ao Postgres de fora do runtime Node; fica como destino futuro, já viabilizado pela escolha do Hono.
+Render foi descartado: o tier gratuito hiberna após ~15 minutos sem tráfego e leva perto de um minuto para responder de novo. Para um projeto avaliado esporadicamente, é o pior perfil possível — o avaliador abre o link e encara uma tela branca. Railway e Fly.io não têm mais tier gratuito real. Cloudflare Workers é tecnicamente superior e continua viável como destino futuro, já que o Hono roda lá sem reescrita.
+
+### Decisão: o catálogo vive no deploy, não em um banco
+
+A documentação previa PostgreSQL no Supabase. Revisto após dimensionar o problema real:
+
+```text
+tamanho máximo previsto      ~6000 cartas
+volatilidade                 estático; cartas novas entram aos poucos
+origem das mudanças          execução manual do importador
+```
+
+Um catálogo desse tamanho normalizado ocupa cerca de 8 MB de JSON, algo em torno de 25 MB de heap — contra 1 GB disponível na função. Filtrar e ordenar 6000 objetos em memória custa menos de um milissegundo, contra 20–50 ms de ida e volta até um Postgres em outra região.
+
+Não é só mais simples: é mais rápido e tem menos modos de falha. Some-se o que deixa de existir — pooling de conexões, pausa do projeto por inatividade, latência entre regiões, limite de conexões, migrations em produção, uma credencial a proteger.
+
+O critério que justificaria um banco é **dado que muda independentemente do deploy**. Não é o caso: aqui o dado só muda quando alguém roda o importador e publica. Dado que acompanha o deploy pertence ao deploy.
+
+Consequências assumidas:
+
+- atualizar o catálogo exige um novo deploy — que é justamente como a atualização já aconteceria;
+- filtros, busca e ordenação são implementados em código, não em SQL;
+- não há escrita em runtime. A API é estritamente somente leitura, o que é o contrato desejado (§3).
+
+O PostgreSQL segue na aplicação consumidora, onde há estado real de usuário — saldo, inventário, leilões. Este catálogo continua genérico e sem estado.
+
+### Se um dia precisar de banco
+
+A camada de dados fica atrás de uma interface de repositório. Trocar a implementação em memória por uma sobre Postgres não toca rotas, schemas nem apresentação — o registro normalizado (§10) já tem exatamente a forma de uma linha de tabela, propositalmente. O gatilho seria o catálogo crescer uma ordem de grandeza, ou passar a mudar sem deploy.
 
 ### Cache é a decisão de capacidade
 
@@ -132,21 +160,31 @@ O catálogo tem 1200 registros, é somente leitura e não muda durante a operaç
 Cache-Control: public, s-maxage=86400, stale-while-revalidate=604800
 ```
 
-Mil leitores da mesma listagem consomem uma invocação de função e uma consulta ao banco. É isso que torna o limite do tier gratuito irrelevante na prática — não a generosidade do limite, mas o fato de quase não o consumirmos.
+Mil leitores da mesma listagem consomem uma única invocação de função. É isso que torna o limite do tier gratuito irrelevante na prática — não a generosidade do limite, mas o fato de quase não o consumirmos.
 
 Regras:
 
 - respostas de `GET` de catálogo e metadados são cacheáveis;
 - `/health` **não** é cacheável (`Cache-Control: no-store`), senão deixa de medir o que se propõe a medir;
-- toda importação que altere dados exige invalidação ou espera do TTL. Como a ingestão é manual e rara, esperar o TTL é aceitável no MVP.
+- publicar um catálogo atualizado exige invalidar o cache ou esperar o TTL. Como cada atualização é um deploy novo, e um deploy novo troca o conteúdo servido, isso se resolve sozinho.
 
-### Três armadilhas conhecidas deste arranjo
+### Carga do catálogo
 
-**1. Pooling de conexões.** Cada invocação serverless pode abrir uma conexão nova e o PostgreSQL tem teto de conexões. A `DATABASE_URL` da API **deve** apontar para o pooler do Supabase (Supavisor) em *transaction mode*, porta **6543** — não para a conexão direta na 5432. Em transaction mode não há prepared statements no lado do servidor: o driver precisa ser configurado de acordo. A conexão direta (5432) fica reservada aos scripts de migration e importação, que rodam na máquina do desenvolvedor e são de longa duração.
+O JSON normalizado é importado estaticamente pelo módulo de dados, com atributo de tipo:
 
-**2. Projetos Supabase gratuitos pausam após ~1 semana sem atividade.** Este é o risco concreto do calendário acadêmico: o trabalho é entregue, e semanas depois o avaliador abre o link com o banco pausado. Mitigação: um cron diário do GitHub Actions batendo em `/api/v1/health` com `no-store` mantém o projeto ativo. Despausar manualmente pelo dashboard também funciona, desde que alguém saiba que precisa fazê-lo.
+```ts
+import payload from '../../data/normalized/cards.json' with { type: 'json' };
+```
 
-**3. Região.** A região do projeto Supabase é escolhida na criação e não pode ser trocada depois sem migração. Banco e função em continentes diferentes custam 150 ms+ por ida e volta. Alinhar as duas regiões desde o início.
+O import estático é deliberado: sendo analisável em tempo de build, o bundler da Vercel não tem como deixar o arquivo de fora. Ler o mesmo arquivo com `fs` em caminho montado em runtime funcionaria localmente e poderia falhar no deploy, que é a pior categoria de bug.
+
+A carga e a indexação acontecem uma vez, na inicialização do módulo. Como o processo atende várias requisições (§6), esse custo é amortizado — não se paga por requisição.
+
+### O processo é efêmero **[verificado em produção]**
+
+Observado ao acompanhar `uptime_seconds` do `/health`: o processo é reciclado após um período ocioso. Nada guardado em memória sobrevive entre instâncias.
+
+Isso não afeta o catálogo, que é reconstruído a partir do JSON a cada inicialização e é imutável. Mas é a razão de a API não guardar nenhum estado de escrita: contador, cache em variável ou sessão simplesmente desapareceriam.
 
 ### Proteção de deployment **[verificado em produção]**
 
@@ -158,7 +196,7 @@ foot-deck-git-<branch>-<org>...       exige login Vercel
 foot-deck-<hash>-<org>...             exige login Vercel
 ```
 
-Manter previews protegidos é desejável. A consequência a não esquecer: qualquer consumidor externo — o jogo, o avaliador do trabalho, o cron de keep-alive — precisa apontar para o domínio de produção. Um cron apontado para preview falha silenciosamente todos os dias e o banco pausa mesmo assim.
+Manter previews protegidos é desejável. A consequência a não esquecer: qualquer consumidor externo — o jogo, o avaliador do trabalho, qualquer monitoramento — precisa apontar para o domínio de produção.
 
 ### Repositórios e CORS
 
@@ -757,48 +795,36 @@ Evolução: coluna `search_vector` com `tsvector` e índice GIN.
 Pipeline, separado da API pública:
 
 ```text
-data/raw/cards.json
-    ↓  normalize-cards.ts     (puro, sem banco, sem rede)
-data/normalized/cards.json
-    ↓  import-cards.ts        (UPSERT)
-PostgreSQL
+Parse.bot (import-futbin.mjs)     manual, com créditos limitados
+    ↓
+data/cards.json                   bruto, preservado
+    ↓  normalize-cards.ts         puro: sem banco, sem rede
+data/normalized/cards.json        versionado no Git
+    ↓  git push
+deploy                            os dados sobem junto com o código
 ```
 
-`normalize-cards.ts` não faz rede nem banco: recebe JSON, devolve JSON. Isso o torna testável e permite validar a normalização de 1200 cartas sem subir infraestrutura.
+`normalize-cards.ts` não faz rede nem banco: recebe JSON, devolve JSON. É testável e permite validar as 1200 cartas sem infraestrutura alguma.
+
+O artefato normalizado é **versionado no Git**, e isso é deliberado: cada deploy carrega exatamente o catálogo que foi testado, e `git log` sobre o arquivo vira o histórico de mudanças do catálogo. Não há migration a rodar nem estado a reconciliar.
 
 ### Idempotência
 
-Chave de reconciliação:
+A chave de reconciliação continua sendo `source + source_id`, aplicada durante a normalização: o último registro de um mesmo par vence, e rodar a normalização duas vezes produz o mesmo arquivo.
 
-```text
-source + source_id
-```
+Com o catálogo materializado em arquivo, a idempotência é uma propriedade verificável por inspeção — o resultado é um artefato, não o estado acumulado de um banco.
 
-```text
-não existe -> INSERT
-já existe  -> UPDATE
-```
+### Acrescentar cartas
 
-Via `INSERT ... ON CONFLICT (source, source_id) DO UPDATE`. Rodar o mesmo arquivo duas vezes não pode criar duplicatas — e é um teste automatizado, não uma promessa.
+O caso previsto é crescimento incremental, não sincronização contínua:
 
-`created_at` nunca é sobrescrito no UPDATE.
+1. retomar `import-futbin.mjs` a partir do checkpoint;
+2. rodar `npm run normalize`;
+3. conferir o relatório — contagens, falhas, avisos;
+4. rodar os testes, que travam as contagens conhecidas;
+5. commitar e publicar.
 
-### Atualização incremental
-
-```text
-Parse.bot -> sync-cards.ts -> normalização -> UPSERT -> import_runs
-```
-
-O sincronizador deve:
-
-1. buscar novas páginas a partir do checkpoint;
-2. normalizar;
-3. reconciliar por `source_id`;
-4. inserir novas cartas;
-5. atualizar existentes;
-6. registrar a execução em `import_runs`.
-
-A API continua disponível mesmo com a fonte externa fora do ar.
+O passo 4 é a rede de proteção: se a fonte mudar de formato, o teste de regressão falha antes do deploy, não depois.
 
 ### Dados brutos
 
@@ -854,7 +880,7 @@ MAX_IDS_PER_REQUEST=100
 CACHE_MAX_AGE=86400
 ```
 
-As duas URLs de banco são intencionais e não intercambiáveis (§5): a API usa o pooler, os scripts usam a conexão direta. `DIRECT_DATABASE_URL` nunca é configurada na Vercel.
+Não há `DATABASE_URL`, nem credencial de banco, nem segredo de qualquer espécie no runtime da API (§5). A única variável obrigatória em produção é `CORS_ORIGIN`.
 
 `env.ts` valida com Zod e falha no boot se algo estiver ausente ou inválido.
 
@@ -898,11 +924,11 @@ Node + TypeScript strict, Hono, Zod, `env.ts`, `/health`, Swagger, tratamento gl
 ### Fase 2 — Normalização
 `src/normalization/` completo, com testes unitários rodando contra o dataset real. **Sem banco ainda.** Saída: `data/normalized/cards.json` validado.
 
-### Fase 3 — Banco
-Schema `cards` e `import_runs`, migrations, índices, `import-cards.ts` idempotente.
+### Fase 3 — Camada de dados
+Carga do catálogo, índices em memória, repositório atrás de interface, consultas com filtros, ordenação, busca e paginação. Sem HTTP.
 
 ### Fase 4 — Catálogo
-Listagem, detalhe, busca, filtros, paginação, ordenação, busca em lote por IDs.
+Rotas de listagem, detalhe, busca em lote por IDs, com schemas Zod e apresentação pública.
 
 ### Fase 5 — Metadados
 Ligas, clubes, versões, nações, posições, stats.
@@ -910,16 +936,15 @@ Ligas, clubes, versões, nações, posições, stats.
 ### Fase 6 — Qualidade
 Testes de integração, logs, OpenAPI revisada, README.
 
-### Fase 7 — Deploy acadêmico
-Projeto Supabase (região definida agora, é irreversível), deploy na Vercel, variáveis de ambiente, migrations de produção via conexão direta, importação inicial, headers de cache, cron anti-pausa.
-
-### Fase 8 — Futuro
+### Fase 7 — Futuro
 Retomar a coleta a partir da página 41 para trazer ratings menores. API Key, rate limit, métricas.
+
+O deploy deixou de ser uma fase: acontece a cada push desde a Fase 1, e sem banco não há infraestrutura a provisionar.
 
 Duas ordenações deliberadas:
 
-- **Normalização antes do banco (Fase 2)**: é onde estão todas as armadilhas do dataset, e pode ser validada sem infraestrutura alguma.
-- **Fundação sem banco (Fase 1)**: um `/health` no ar prova o pipeline Vercel inteiro — build, rota, ambiente — antes de somar a variável "conexão com Postgres" à investigação. Vale fazer o primeiro deploy já na Fase 1, e não só na Fase 7. Descobrir um problema de plataforma com um projeto de dois arquivos é muito mais barato do que descobri-lo com o projeto pronto.
+- **Normalização antes de qualquer consulta (Fase 2)**: é onde estão todas as armadilhas do dataset, e pode ser validada sem infraestrutura alguma. Quando as consultas forem escritas, os dados já são confiáveis.
+- **Deploy na Fase 1, não no fim**: um `/health` no ar provou o pipeline inteiro — build, rota, ambiente — com um projeto de dois arquivos. Descobrir ali que a Vercel mudou o modelo de entrypoint custou minutos; descobrir o mesmo com o projeto pronto teria custado uma tarde de investigação com muitas variáveis simultâneas.
 
 ---
 
@@ -997,25 +1022,24 @@ O RPG entra depois como terceiro consumidor, sem mudança estrutural na API.
 
 ## 29. Critérios de aceite do MVP
 
-- [ ] PostgreSQL criado e migrations reproduzem o schema do zero
-- [ ] normalização das 1200 cartas sem exceções, com testes
-- [ ] parser de posição cobre os 4 formatos observados
-- [ ] atributos de goleiro remapeados
-- [ ] preços convertidos e `reference_price` correto nos 3 cenários
-- [ ] 1200 cartas importadas, 935 marcadas `is_complete`
-- [ ] importação idempotente, verificada por teste
-- [ ] `/api/v1/health` funcionando
+- [x] `/api/v1/health` funcionando
+- [x] Swagger publicado em `/docs`
+- [x] deploy na Vercel funcionando, com redeploy automático a cada push
+- [x] `CORS_ORIGIN` definida explicitamente no ambiente de produção
+- [x] normalização das 1200 cartas sem exceções, com testes
+- [x] parser de posição cobre os 4 formatos observados
+- [x] atributos de goleiro remapeados
+- [x] preços convertidos e `reference_price` correto nos 3 cenários
+- [x] 1200 cartas normalizadas, 935 marcadas `is_complete`
+- [x] normalização idempotente, verificada por teste
+- [ ] catálogo carregado e indexado na inicialização
 - [ ] `/api/v1/cards` com busca, filtros, paginação e ordenação
 - [ ] `/api/v1/cards?ids=` funcionando
 - [ ] `/api/v1/cards/:id` funcionando, 404 para inexistente
 - [ ] busca insensível a acento
 - [ ] endpoints de metadados funcionando
-- [ ] Swagger publicado em `/docs`
-- [ ] testes unitários e de integração passando
-- [ ] deploy na Vercel funcionando, apontando para o Supabase via pooler (6543)
+- [ ] testes de integração passando
 - [ ] headers de cache verificados em produção (`x-vercel-cache: HIT` na segunda requisição)
-- [ ] CORS_ORIGIN definida explicitamente no ambiente de produção
-- [ ] cron anti-pausa do Supabase ativo
 
 ---
 

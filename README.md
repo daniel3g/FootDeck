@@ -64,13 +64,7 @@ A Vercel define `NODE_ENV=production` sozinha — não configure essa variável 
 
 **`CORS_ORIGIN` é obrigatória em produção.** Sem ela a API falha no boot, de propósito: a Vercel já roda em modo produção, então a origem ficaria aberta por default em vez de por decisão. `*` é uma escolha legítima para um catálogo público sem credenciais; troque pela origem do jogo se quiser restringir.
 
-Cadastre o secret `API_HEALTH_URL` no GitHub com **exatamente** esta URL:
-
-```
-https://foot-deck.vercel.app/api/v1/health
-```
-
-O workflow `keep-alive` usa isso para impedir que o projeto Supabase pause por inatividade. Precisa ser o domínio de produção — uma URL de preview devolve 302 e o cron falha todo dia.
+Não há banco de dados, credencial ou serviço externo a provisionar — o catálogo viaja dentro do deploy. Para publicar cartas novas: rode o importador, `npm run normalize`, commite e dê push.
 
 ---
 
