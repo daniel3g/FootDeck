@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { swaggerUI } from '@hono/swagger-ui';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { env } from './config/env.js';
+import { corsOrigin, env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { validationError } from './errors.js';
 import { healthRoutes } from './modules/health/health.routes.js';
@@ -36,7 +36,7 @@ export function createApp(): OpenAPIHono {
   app.use(
     '*',
     cors({
-      origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(','),
+      origin: corsOrigin === '*' ? '*' : corsOrigin.split(','),
       allowMethods: ['GET', 'OPTIONS'],
       maxAge: 86_400,
     }),

@@ -813,7 +813,7 @@ O normalizador nunca altera arquivos brutos. Coletas futuras vão para uma nova 
 - `limit` máximo aplicado no servidor, não confiando no cliente;
 - teto de 100 IDs no filtro `ids`;
 - allowlist de ordenação;
-- CORS restrito à origem do jogo em produção, permissivo apenas em desenvolvimento;
+- CORS definido explicitamente em produção, nunca herdado de um default (§20);
 - tratamento uniforme de erros, sem vazar stack trace em produção;
 - endpoints administrativos separados;
 - `PARSE_API_KEY` fora do runtime público — o servidor da API não a conhece;
@@ -846,7 +846,11 @@ CACHE_MAX_AGE=86400
 
 As duas URLs de banco são intencionais e não intercambiáveis (§5): a API usa o pooler, os scripts usam a conexão direta. `DIRECT_DATABASE_URL` nunca é configurada na Vercel.
 
-`env.ts` valida com Zod e falha no boot se algo estiver ausente ou inválido. Em produção, `CORS_ORIGIN=*` deve ser recusado pela validação — a origem do jogo precisa ser explícita.
+`env.ts` valida com Zod e falha no boot se algo estiver ausente ou inválido.
+
+Sobre `CORS_ORIGIN`: em produção ela precisa ser definida **explicitamente**, e `*` é um valor válido. A primeira versão desta documentação recusava `*` em produção; a regra foi revista porque estava errada em mérito. CORS protege credenciais do usuário contra leitura cross-origin, e este catálogo é público, somente leitura e sem autenticação — não há credencial a proteger. Restringir origem aqui é atrito sem ganho.
+
+O que a regra preserva é o essencial: como a Vercel define `NODE_ENV=production` automaticamente, sem essa checagem a origem ficaria aberta por herdar um default, não por decisão de quem publicou.
 
 ---
 
@@ -1000,7 +1004,7 @@ O RPG entra depois como terceiro consumidor, sem mudança estrutural na API.
 - [ ] testes unitários e de integração passando
 - [ ] deploy na Vercel funcionando, apontando para o Supabase via pooler (6543)
 - [ ] headers de cache verificados em produção (`x-vercel-cache: HIT` na segunda requisição)
-- [ ] CORS liberando a origem do jogo e bloqueando as demais
+- [ ] CORS_ORIGIN definida explicitamente no ambiente de produção
 - [ ] cron anti-pausa do Supabase ativo
 
 ---

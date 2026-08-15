@@ -49,12 +49,13 @@ npx vercel --prod   # produção
 Variáveis a configurar no painel da Vercel:
 
 ```text
-NODE_ENV=production
 API_VERSION=v1
-CORS_ORIGIN=https://<origem-do-jogo>
+CORS_ORIGIN=*
 ```
 
-`CORS_ORIGIN=*` é **recusado** em produção pela validação de ambiente — a origem do consumidor precisa ser explícita.
+A Vercel define `NODE_ENV=production` sozinha — não configure essa variável manualmente.
+
+**`CORS_ORIGIN` é obrigatória em produção.** Sem ela a API falha no boot, de propósito: a Vercel já roda em modo produção, então a origem ficaria aberta por default em vez de por decisão. `*` é uma escolha legítima para um catálogo público sem credenciais; troque pela origem do jogo se quiser restringir.
 
 Depois do primeiro deploy, cadastre o secret `API_HEALTH_URL` no GitHub apontando para `https://<projeto>.vercel.app/api/v1/health`. O workflow `keep-alive` usa isso para impedir que o projeto Supabase pause por inatividade.
 
