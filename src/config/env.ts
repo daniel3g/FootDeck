@@ -9,21 +9,41 @@ import { z } from 'zod';
  * protegeria. O que a regra impede é a origem ficar aberta por descuido,
  * herdada de um default, em vez de por decisão.
  */
+/**
+ * Trata string vazia como "não definida".
+ *
+ * Painéis de deploy (a Vercel entre eles) leem as chaves do .env.example e
+ * criam as variáveis com valor em branco. Sem isto, `PORT=""` vira 0 e
+ * derruba o boot, e `CACHE_MAX_AGE=""` vira 0 e desliga o cache em silêncio
+ * — que é a falha pior das duas.
+ */
+const unsetIfBlank = <T extends z.ZodTypeAny>(inner: T) =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim() === '' ? undefined : value,
+    inner,
+  );
+
+const positiveInt = (fallback: number) =>
+  unsetIfBlank(z.coerce.number().int().positive().default(fallback));
+
 const schema = z
   .object({
-    NODE_ENV: z
-      .enum(['development', 'test', 'production'])
-      .default('development'),
-    PORT: z.coerce.number().int().positive().default(3000),
+    NODE_ENV: unsetIfBlank(
+      z.enum(['development', 'test', 'production']).default('development'),
+    ),
+    PORT: positiveInt(3000),
 
-    API_VERSION: z.string().default('v1'),
-    CORS_ORIGIN: z.string().min(1).optional(),
+    API_VERSION: unsetIfBlank(z.string().default('v1')),
+    CORS_ORIGIN: unsetIfBlank(z.string().min(1).optional()),
 
-    DEFAULT_PAGE_SIZE: z.coerce.number().int().positive().default(20),
-    MAX_PAGE_SIZE: z.coerce.number().int().positive().default(100),
-    MAX_IDS_PER_REQUEST: z.coerce.number().int().positive().default(100),
+    DEFAULT_PAGE_SIZE: positiveInt(20),
+    MAX_PAGE_SIZE: positiveInt(100),
+    MAX_IDS_PER_REQUEST: positiveInt(100),
 
-    CACHE_MAX_AGE: z.coerce.number().int().nonnegative().default(86_400),
+    CACHE_MAX_AGE: unsetIfBlank(
+      z.coerce.number().int().nonnegative().default(86_400),
+    ),
   })
   .refine(
     (env) => env.NODE_ENV !== 'production' || env.CORS_ORIGIN !== undefined,
