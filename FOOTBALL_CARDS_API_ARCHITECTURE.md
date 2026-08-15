@@ -170,12 +170,9 @@ Se o Supabase se tornar um obstáculo operacional, o dataset normalizado (~2 MB)
 ```text
 football-cards-api/
 │
-├── api/
-│   └── index.ts              # entrypoint da Vercel: exporta o app Hono
-│
 ├── src/
 │   ├── app.ts                # monta rotas e middlewares, sem escutar porta
-│   ├── server.ts             # execução local (node server)
+│   ├── server.ts             # entrypoint único: local e Vercel
 │   │
 │   ├── config/
 │   │   └── env.ts
@@ -236,7 +233,8 @@ football-cards-api/
 
 Três pontos sobre essa organização:
 
-- `src/app.ts` monta o app e **não** escuta porta. Quem escuta é `src/server.ts` (local) ou a Vercel via `api/index.ts`. Isso mantém o app testável sem rede — o Vitest importa `app` e chama `app.request('/api/v1/cards')` direto.
+- `src/app.ts` monta o app e **não** escuta porta. Quem escuta é `src/server.ts`, declarado em `package.json` → `main`. Isso mantém o app testável sem rede — o Vitest importa `app` e chama `app.request('/api/v1/cards')` direto.
+- **Entrypoint único.** A Vercel executa o mesmo `src/server.ts` do desenvolvimento local, injetando `PORT` (modo servidor). Não existe um segundo entrypoint para a nuvem, então não há como os dois ambientes divergirem. Além disso, um processo que atende várias requisições reaproveita conexões de banco — o que importa a partir da Fase 3, com o pooler do Supabase.
 - `src/normalization/` é compartilhado entre os scripts de ingestão e os testes. Nenhuma regra de normalização deve viver dentro de `scripts/`.
 - `scripts/` roda apenas na máquina do desenvolvedor, com a conexão direta ao banco, e nunca é empacotado no deploy.
 

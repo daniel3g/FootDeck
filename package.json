@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "API REST de catálogo de cartas de futebol",
+  "main": "src/server.ts",
   "engines": {
     "node": ">=20"
   },

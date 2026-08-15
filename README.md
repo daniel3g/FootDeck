@@ -39,12 +39,9 @@ npm run format   # prettier
 
 ## Deploy na Vercel
 
-O projeto já está configurado: `api/index.ts` é o entrypoint e o `vercel.json` redireciona todas as rotas para ele.
+A Vercel roda o projeto em **modo servidor**: executa `src/server.ts` (declarado em `package.json` → `main`) e injeta `PORT`. É o mesmo processo que roda localmente — não existe um segundo entrypoint para a nuvem.
 
-```bash
-npx vercel          # preview
-npx vercel --prod   # produção
-```
+Importe o repositório em [vercel.com/new](https://vercel.com/new) e todo push na `main` passa a deployar sozinho.
 
 Variáveis a configurar no painel da Vercel:
 
@@ -64,9 +61,8 @@ Depois do primeiro deploy, cadastre o secret `API_HEALTH_URL` no GitHub apontand
 ## Estrutura
 
 ```text
-api/index.ts     entrypoint da Vercel
 src/app.ts       monta o app (não escuta porta — permite testar sem rede)
-src/server.ts    execução local
+src/server.ts    entrypoint: local e Vercel
 src/config/      validação de ambiente
 src/middleware/  cors, cache, erros
 src/modules/     rotas por domínio
