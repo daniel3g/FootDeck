@@ -1,12 +1,12 @@
 # Football Cards API — Arquitetura
 
-> Versão 3 — revisada contra o dataset real (`data/cards.json`, 1200 cartas, 40 páginas coletadas em 2026-08-14)
-> e fechada a decisão de hospedagem: **Hono + Vercel + Supabase**.
-> As seções marcadas com **[dado real]** foram derivadas da inspeção do dataset, não de suposição.
+> Versão 4 — revisada contra o dataset real (`data/cards.json`, 1200 cartas, 40 páginas coletadas em 2026-08-14).
+> Stack fechada: **Hono + Vercel, sem banco de dados**.
+> As seções marcadas com **[dado real]** ou **[verificado em produção]** foram derivadas de medição, não de suposição.
 >
 > Decisões travadas até aqui: importar as 1200 cartas com flags de qualidade; tratar goleiros
 > em bloco separado; adiar a coleta de ratings menores; Hono no lugar de Fastify;
-> PostgreSQL como requisito; repositórios separados para API e jogo.
+> repositórios separados para API e jogo; **catálogo em memória, carregado do deploy** (§5).
 
 ## 1. Visão geral
 
@@ -15,11 +15,11 @@ A **Football Cards API** é uma API REST genérica para consulta de cartas de fu
 ```text
 FONTE EXTERNA (Parse.bot / FUTBIN)
      ↓
-IMPORTADOR / SYNC          (offline, fora do runtime público)
+IMPORTADOR + NORMALIZAÇÃO  (offline, na máquina do desenvolvedor)
      ↓
-BANCO DA API               (PostgreSQL)
+CATÁLOGO VERSIONADO        (data/normalized/cards.json, no Git)
      ↓
-FOOTBALL CARDS API         (/api/v1)
+FOOTBALL CARDS API         (/api/v1, catálogo em memória)
      ↓
 ┌──────────────────────────────┐
 │ Jogo de leilão              │
@@ -39,7 +39,7 @@ O MVP deve:
 
 - importar o `cards.json` já coletado;
 - normalizar posições, atributos, preços e imagens;
-- persistir as cartas em PostgreSQL;
+- carregar e indexar o catálogo na inicialização;
 - disponibilizar uma API REST versionada;
 - permitir listagem, busca, filtros, ordenação e paginação;
 - suportar busca em lote por IDs (hidratação de inventário);
@@ -81,8 +81,8 @@ Esses recursos pertencem ao backend da aplicação consumidora.
 - **Hono** — framework HTTP
 - Zod
 - `@hono/zod-openapi` — o mesmo schema Zod valida a entrada e gera o OpenAPI
-- Drizzle ORM
-- PostgreSQL
+
+Sem ORM e sem banco: o catálogo é carregado do JSON normalizado e servido de memória (§5).
 
 ### Ferramentas
 
@@ -99,20 +99,13 @@ A documentação anterior previa Fastify. A troca acompanha a decisão de hosped
 - Fastify roda em serverless apenas via adaptador. Paga-se a construção da instância e o registro de todos os plugins a cada cold start, e o roteamento acontece duas vezes — a plataforma roteia até a função, o Fastify roteia de novo por dentro.
 - Hono é construído sobre `Request`/`Response` do padrão fetch, que é o modelo nativo da plataforma — e o mesmo vocabulário já usado no frontend.
 - `@hono/zod-openapi` entrega exatamente o que o projeto pedia: schema único que valida e documenta.
-- Hono roda em Node, Vercel, Cloudflare Workers, Deno e Bun **sem reescrita**. A escolha de hospedagem deixa de ser irreversível: migrar para Workers depois mexe só na camada de banco.
+- Hono roda em Node, Vercel, Cloudflare Workers, Deno e Bun **sem reescrita**. Sem banco, essa portabilidade fica total: migrar para Workers não exigiria mudança alguma na camada de dados.
 
-Drizzle, schema, normalização e testes são idênticos nos dois casos. A troca afeta apenas a camada HTTP.
-
-### Banco
-
-PostgreSQL no Supabase (tier gratuito).
+Normalização e testes seriam idênticos com qualquer framework. A escolha afeta apenas a camada HTTP.
 
 ### Hospedagem
 
-- API: **Vercel** (Hobby)
-- Banco: **Supabase** (Free)
-
-Ver §5 para as decisões operacionais — que é onde esse arranjo costuma falhar.
+**Vercel** (Hobby). Nenhum outro serviço. Ver §5.
 
 ---
 
@@ -209,9 +202,7 @@ football-auction-game     → consumidor
 
 Como o consumidor está em outra origem, `CORS_ORIGIN` precisa ser configurável por ambiente — permissivo em desenvolvimento, restrito à origem do jogo em produção. Ver §20.
 
-### Plano B documentado
-
-Se o Supabase se tornar um obstáculo operacional, o dataset normalizado (~2 MB) pode ser embarcado no deploy e servido da memória, eliminando banco, pooling e pausa. Não é o caminho escolhido — PostgreSQL é requisito do trabalho e é onde está o aprendizado — mas a arquitetura em camadas (repositório isolado atrás de uma interface) mantém essa saída barata.
+Este era o "plano B" da versão anterior deste documento, quando o alvo ainda era Supabase. Virou o plano A ao dimensionar o problema real — ver a decisão acima.
 
 ---
 
@@ -227,52 +218,45 @@ football-cards-api/
 │   ├── config/
 │   │   └── env.ts
 │   │
-│   ├── db/
-│   │   ├── client.ts
-│   │   ├── schema/
-│   │   │   ├── cards.ts
-│   │   │   └── import-runs.ts
-│   │   └── migrations/
+│   ├── catalog/              # camada de dados
+│   │   ├── index.ts          # carga do JSON e instância única
+│   │   ├── repository.ts     # consultas em memória
+│   │   ├── identity.ts       # UUID v5 determinístico
+│   │   ├── text.ts           # normalização para busca
+│   │   └── types.ts          # CardRepository, CardQuery
+│   │
+│   ├── normalization/        # bruto -> registro normalizado
+│   │   ├── positions.ts
+│   │   ├── prices.ts
+│   │   ├── attributes.ts
+│   │   ├── card.ts
+│   │   └── types.ts
 │   │
 │   ├── modules/
+│   │   ├── health/
+│   │   │   └── health.routes.ts
 │   │   ├── cards/
 │   │   │   ├── cards.routes.ts
-│   │   │   ├── cards.controller.ts
-│   │   │   ├── cards.service.ts
-│   │   │   ├── cards.repository.ts
 │   │   │   ├── cards.schemas.ts
-│   │   │   ├── cards.presenter.ts
-│   │   │   └── cards.types.ts
+│   │   │   └── cards.presenter.ts
 │   │   └── metadata/
-│   │       ├── metadata.routes.ts
-│   │       └── metadata.service.ts
+│   │       └── metadata.routes.ts
 │   │
 │   ├── middleware/
-│   │   ├── cors.ts
 │   │   ├── cache.ts
 │   │   └── error-handler.ts
 │   │
-│   ├── docs/
-│   │   └── openapi.ts
-│   │
-│   └── normalization/
-│       ├── positions.ts
-│       ├── prices.ts
-│       ├── attributes.ts
-│       └── card.ts
+│   └── errors.ts
 │
 ├── scripts/
-│   ├── normalize-cards.ts
-│   ├── import-cards.ts
-│   └── sync-cards.ts
+│   └── normalize-cards.ts
 │
 ├── data/
-│   ├── raw/
-│   └── normalized/
+│   ├── cards.json            # bruto, preservado
+│   ├── pages/                # respostas cruas da coleta
+│   └── normalized/           # artefato servido pela API
 │
 ├── tests/
-├── drizzle/
-├── .github/workflows/keep-alive.yml   # cron anti-pausa do Supabase (§5)
 ├── vercel.json
 ├── .env.example
 ├── package.json
@@ -284,7 +268,7 @@ football-cards-api/
 Três pontos sobre essa organização:
 
 - `src/app.ts` monta o app e **não** escuta porta. Quem escuta é `src/server.ts`, declarado em `package.json` → `main`. Isso mantém o app testável sem rede — o Vitest importa `app` e chama `app.request('/api/v1/cards')` direto.
-- **Entrypoint único.** A Vercel executa o mesmo `src/server.ts` do desenvolvimento local, injetando `PORT` (modo servidor). Não existe um segundo entrypoint para a nuvem, então não há como os dois ambientes divergirem. Além disso, um processo que atende várias requisições reaproveita conexões de banco — o que importa a partir da Fase 3, com o pooler do Supabase.
+- **Entrypoint único.** A Vercel executa o mesmo `src/server.ts` do desenvolvimento local, injetando `PORT` (modo servidor). Não existe um segundo entrypoint para a nuvem, então não há como os dois ambientes divergirem. Além disso, um processo que atende várias requisições amortiza a carga e a indexação do catálogo, que acontecem uma única vez na inicialização.
 - `src/normalization/` é compartilhado entre os scripts de ingestão e os testes. Nenhuma regra de normalização deve viver dentro de `scripts/`.
 - `scripts/` roda apenas na máquina do desenvolvedor, com a conexão direta ao banco, e nunca é empacotado no deploy.
 
@@ -784,7 +768,9 @@ Ordenar por `reference_price` deve usar `NULLS LAST` em ambas as direções: 220
 search=ronaldo
 ```
 
-MVP: `ILIKE` sobre `name`, `club` e `version`. A busca deve ser insensível a acentos — o dataset tem `Ibrahimović`, `Nazário`, `Süper Lig`. Usar `unaccent` do PostgreSQL desde o início; deixar para depois custa uma migration e retrabalho no índice.
+Busca por substring em `name`, `club` e `version`, combinados num índice único calculado na carga.
+
+A busca é **insensível a acento e caixa** — o dataset tem `Ibrahimović`, `Nazário`, `Süper Lig`, e quase ninguém digita esses caracteres. Nome, clube e versão são normalizados uma vez (NFD, remoção de diacríticos, minúsculas) e guardados em `search_text`; o termo buscado passa pela mesma função. Comparar formas já normalizadas dispensa qualquer processamento por requisição.
 
 Evolução: coluna `search_vector` com `tsvector` e índice GIN.
 
@@ -853,8 +839,7 @@ O normalizador nunca altera arquivos brutos. Coletas futuras vão para uma nova 
 - tratamento uniforme de erros, sem vazar stack trace em produção;
 - endpoints administrativos separados;
 - `PARSE_API_KEY` fora do runtime público — o servidor da API não a conhece;
-- `DIRECT_DATABASE_URL` fora do runtime público — só existe na máquina do desenvolvedor;
-- a chave `service_role` do Supabase nunca sai do ambiente local. A API acessa o banco por conexão Postgres com um usuário próprio, não pela API do Supabase.
+- a API não tem credencial alguma em runtime: não há banco, nem serviço externo, nem chave a vazar. A superfície de ataque se reduz a entrada malformada, e toda entrada passa por Zod.
 
 ---
 
@@ -863,12 +848,6 @@ O normalizador nunca altera arquivos brutos. Coletas futuras vão para uma nova 
 ```env
 NODE_ENV=development
 PORT=3000
-
-# Runtime da API — pooler Supavisor, transaction mode, porta 6543
-DATABASE_URL=postgresql://...@...pooler.supabase.com:6543/postgres
-
-# Migrations e importação — conexão direta, porta 5432, apenas local
-DIRECT_DATABASE_URL=postgresql://...@db....supabase.co:5432/postgres
 
 API_VERSION=v1
 CORS_ORIGIN=*
@@ -1032,13 +1011,13 @@ O RPG entra depois como terceiro consumidor, sem mudança estrutural na API.
 - [x] preços convertidos e `reference_price` correto nos 3 cenários
 - [x] 1200 cartas normalizadas, 935 marcadas `is_complete`
 - [x] normalização idempotente, verificada por teste
-- [ ] catálogo carregado e indexado na inicialização
-- [ ] `/api/v1/cards` com busca, filtros, paginação e ordenação
-- [ ] `/api/v1/cards?ids=` funcionando
-- [ ] `/api/v1/cards/:id` funcionando, 404 para inexistente
-- [ ] busca insensível a acento
-- [ ] endpoints de metadados funcionando
-- [ ] testes de integração passando
+- [x] catálogo carregado e indexado na inicialização
+- [x] `/api/v1/cards` com busca, filtros, paginação e ordenação
+- [x] `/api/v1/cards?ids=` funcionando
+- [x] `/api/v1/cards/:id` funcionando, 404 para inexistente
+- [x] busca insensível a acento
+- [x] endpoints de metadados funcionando
+- [x] testes de integração passando
 - [ ] headers de cache verificados em produção (`x-vercel-cache: HIT` na segunda requisição)
 
 ---

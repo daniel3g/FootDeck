@@ -14,11 +14,25 @@ import type { CardRepository } from './types.js';
  * A construção acontece uma vez, na inicialização do módulo. Como o
  * processo atende várias requisições, o custo é amortizado.
  */
-const cards = (payload as { cards: NormalizedCard[] }).cards;
+const source = payload as {
+  cards: NormalizedCard[];
+  generated_at: string;
+  collected_at: string | null;
+};
 
-export const catalog: CardRepository = new InMemoryCardRepository(cards);
+export const catalog: CardRepository = new InMemoryCardRepository(source.cards);
 
-export const catalogSize = cards.length;
+export const catalogSize = source.cards.length;
+
+/** Quando a normalização rodou. */
+export const catalogGeneratedAt = source.generated_at;
+
+/**
+ * Quando os preços foram coletados da fonte — não quando o catálogo foi
+ * normalizado. Re-rodar a normalização não torna um preço mais atual, e
+ * o consumidor precisa disso para não tratá-los como cotação ao vivo.
+ */
+export const catalogCollectedAt = source.collected_at ?? source.generated_at;
 
 export { InMemoryCardRepository } from './repository.js';
 export * from './types.js';

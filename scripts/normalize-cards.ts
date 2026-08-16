@@ -40,8 +40,13 @@ function count<T>(
 async function main(): Promise<void> {
   const payload = JSON.parse(await fs.readFile(INPUT, 'utf8')) as {
     cards?: RawCard[];
+    generated_at?: string;
   };
   const raw = payload.cards ?? [];
+
+  // Quando a FONTE foi coletada — diferente de quando a normalização rodou.
+  // É esta a data dos preços; normalizar de novo não os torna mais atuais.
+  const collectedAt = payload.generated_at ?? null;
 
   const cards: NormalizedCard[] = [];
   const failures: Failure[] = [];
@@ -73,6 +78,7 @@ async function main(): Promise<void> {
 
   const report = {
     generated_at: new Date().toISOString(),
+    collected_at: collectedAt,
     input: path.relative(ROOT, INPUT),
 
     raw_cards: raw.length,
@@ -110,7 +116,12 @@ async function main(): Promise<void> {
   await fs.writeFile(
     OUT_CARDS,
     JSON.stringify(
-      { generated_at: report.generated_at, total: cards.length, cards },
+      {
+        generated_at: report.generated_at,
+        collected_at: collectedAt,
+        total: cards.length,
+        cards,
+      },
       null,
       2,
     ),

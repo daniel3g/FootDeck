@@ -6,6 +6,8 @@ import { corsOrigin, env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { validationError } from './errors.js';
 import { healthRoutes } from './modules/health/health.routes.js';
+import { cardsRoutes } from './modules/cards/cards.routes.js';
+import { metadataRoutes } from './modules/metadata/metadata.routes.js';
 
 /**
  * Monta a aplicação. Não escuta porta — quem escuta é `src/server.ts`
@@ -45,6 +47,8 @@ export function createApp(): OpenAPIHono {
   const base = `/api/${env.API_VERSION}`;
 
   app.route(base, healthRoutes);
+  app.route(base, cardsRoutes);
+  app.route(base, metadataRoutes);
 
   app.doc(`${base}/openapi.json`, {
     openapi: '3.0.0',

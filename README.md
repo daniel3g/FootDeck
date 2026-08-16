@@ -14,7 +14,36 @@ Use sempre o domínio de produção acima. As URLs de branch e preview (`foot-de
 
 Documentação de arquitetura e decisões: [`FOOTBALL_CARDS_API_ARCHITECTURE.md`](./FOOTBALL_CARDS_API_ARCHITECTURE.md).
 
-**Estado atual: Fase 1 (fundação).** Servidor, validação de ambiente, OpenAPI, tratamento de erros e testes. Ainda sem banco de dados.
+**Estado atual: Fase 4.** Catálogo completo em memória — listagem, filtros, busca, ordenação, paginação, busca em lote e metadados. Sem banco de dados: as 1200 cartas viajam dentro do deploy.
+
+## Endpoints
+
+```http
+GET /api/v1/health
+GET /api/v1/cards
+GET /api/v1/cards/{id}
+GET /api/v1/cards/source/{source}/{sourceId}
+GET /api/v1/leagues | /clubs | /versions | /nations | /positions
+GET /api/v1/stats
+```
+
+Exemplos:
+
+```bash
+# atacantes da Premier League acima de 95, do mais caro para o mais barato
+/api/v1/cards?league=Premier League&position=ST&min_rating=95&sort=reference_price&order=desc
+
+# hidratar um inventário de uma vez só (até 100 IDs)
+/api/v1/cards?ids=uuid1,uuid2,uuid3
+
+# goleiros com boa defesa — atributos com o nome correto
+/api/v1/cards?min_reflexes=90&min_diving=90
+
+# só cartas com imagem e preço
+/api/v1/cards?is_complete=true&search=ibrahimovic
+```
+
+Filtros de atributo de linha (`min_pace`, `min_shooting`, …) **excluem goleiros**, porque comparar Diving com Pace não tem significado. Use `include_goalkeepers=true` para incluí-los. A lista completa de parâmetros está em `/docs`.
 
 ---
 
