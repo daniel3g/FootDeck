@@ -8,6 +8,7 @@ import { validationError } from './errors.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { cardsRoutes } from './modules/cards/cards.routes.js';
 import { metadataRoutes } from './modules/metadata/metadata.routes.js';
+import { manualRoutes } from './modules/manual/manual.routes.js';
 
 /**
  * Monta a aplicação. Não escuta porta — quem escuta é `src/server.ts`
@@ -55,13 +56,20 @@ export function createApp(): OpenAPIHono {
     info: {
       title: 'Football Cards API',
       version: '0.1.0',
-      description:
+      description: [
         'Catálogo de cartas de futebol. Serviço genérico de consulta, independente das regras de qualquer jogo.',
+        '',
+        'Esta página lista o contrato campo por campo. Para o passo a passo de uso — convenções,',
+        'a regra dos goleiros, receitas de consulta e as armadilhas — veja o [manual](/manual).',
+      ].join('\n'),
     },
     servers: [{ url: '/', description: 'Servidor atual' }],
   });
 
   app.get('/docs', swaggerUI({ url: `${base}/openapi.json` }));
+
+  // Documentação em HTML, fora do prefixo de versão (ver manual.routes.ts).
+  app.route('/', manualRoutes);
 
   app.get('/', (c) => c.redirect('/docs'));
 

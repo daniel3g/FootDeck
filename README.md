@@ -6,9 +6,12 @@ API REST de catálogo de cartas de futebol. Serviço genérico de consulta, inde
 
 | Recurso | URL |
 | --- | --- |
+| Manual de uso | https://foot-deck.vercel.app/manual |
 | Swagger UI | https://foot-deck.vercel.app/docs |
 | Health | https://foot-deck.vercel.app/api/v1/health |
 | OpenAPI | https://foot-deck.vercel.app/api/v1/openapi.json |
+
+O **manual** é a leitura de quem vai consumir a API: convenções, a regra dos goleiros, o objeto Carta campo por campo, receitas de consulta e as armadilhas. O **Swagger** é a referência para testar chamada por chamada.
 
 Use sempre o domínio de produção acima. As URLs de branch e preview (`foot-deck-git-main-…`, `foot-deck-<hash>-…`) ficam atrás da autenticação da Vercel e devolvem 302.
 
@@ -59,6 +62,7 @@ npm run dev
 
 | URL | O que é |
 | --- | --- |
+| http://localhost:3000/manual | Manual de uso |
 | http://localhost:3000/docs | Swagger UI |
 | http://localhost:3000/api/v1/health | Health check |
 | http://localhost:3000/api/v1/openapi.json | Documento OpenAPI |
@@ -105,6 +109,8 @@ src/server.ts    entrypoint: local e Vercel
 src/config/      validação de ambiente
 src/middleware/  cors, cache, erros
 src/modules/     rotas por domínio
+                 manual/ é a página HTML de /manual, servida como string
+                 (import estático, nunca fs — ver o comentário no módulo)
 tests/           testes
 data/            dataset bruto coletado do FUTBIN
 ```
